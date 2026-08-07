@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export const Consultation: React.FC = () => {
-  const { language, healthData, currentScores, recommendations, doctorQuestions, patientNotes, setPatientNotes } = useApp();
+  const { language, healthData, currentScores, recommendations, doctorQuestions, patientNotes, setPatientNotes, name, username } = useApp();
   const reportRef = useRef<HTMLDivElement>(null);
   const t = translations[language] || translations.en;
 
@@ -27,7 +27,7 @@ export const Consultation: React.FC = () => {
     // Generate simple metadata file download as a mock PDF exporter
     const content = `VITALPREDICT HEALTH CLINICAL CONSULTATION BRIEF
 Generated: ${new Date().toLocaleDateString()}
-Patient Name: Rashmi
+Patient Name: ${name || 'User'} (@${username || 'user'})
 Age: ${healthData.age} | Gender: ${healthData.gender}
 Height: ${healthData.height}cm | Weight: ${healthData.weight}kg
 
@@ -58,7 +58,7 @@ Disclaimer: This report was synthesized by the VitalPredict Explainable Decision
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `VitalPredict_Consultation_Brief_Rashmi.txt`;
+    link.download = `VitalPredict_Consultation_Brief_${username || 'user'}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -116,7 +116,7 @@ Disclaimer: This report was synthesized by the VitalPredict Explainable Decision
             <span className="text-[10px] font-bold text-primary font-mono tracking-widest uppercase bg-primary/10 px-2 py-0.5 rounded border border-primary/20 print:text-black print:border-slate-300">
               PATIENT SUMMARY REPORT
             </span>
-            <h3 className="text-xl font-bold">Rashmi</h3>
+            <h3 className="text-xl font-bold">{name || 'User'}</h3>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground font-semibold print:text-slate-600">
               <span>Age: {healthData.age} Yrs</span>
               <span>•</span>

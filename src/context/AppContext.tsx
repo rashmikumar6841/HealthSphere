@@ -64,6 +64,10 @@ interface AppContextProps {
   setTheme: (theme: 'dark' | 'light') => void;
   isLoggedIn: boolean;
   setIsLoggedIn: (status: boolean) => void;
+  username: string | null;
+  name: string | null;
+  setSession: (username: string, name: string) => void;
+  logout: () => void;
   healthData: HealthData;
   setHealthData: (data: HealthData) => void;
   simParameters: SimParameters;
@@ -74,27 +78,28 @@ interface AppContextProps {
   resetSimulation: () => void;
   recommendations: Recommendation[];
   timelineEvents: HealthTimelineEvent[];
+  vitalsHistory: any[];
   doctorQuestions: string[];
   patientNotes: string;
   setPatientNotes: (notes: string) => void;
 }
 
 const defaultHealthData: HealthData = {
-  age: 48,
+  age: 45,
   gender: 'male',
-  height: 176,
-  weight: 84,
-  bpSystolic: 138,
-  bpDiastolic: 88,
-  glucose: 114,
-  heartRate: 78,
-  sleepDuration: 5.8,
-  stressLevel: 7,
-  dailySteps: 4200,
-  exerciseFrequency: 1.5,
-  smoking: 'smoker',
-  alcohol: 'moderate',
-  familyHistory: 'yes',
+  height: 172,
+  weight: 75,
+  bpSystolic: 120,
+  bpDiastolic: 80,
+  glucose: 95,
+  heartRate: 72,
+  sleepDuration: 7.5,
+  stressLevel: 4,
+  dailySteps: 7500,
+  exerciseFrequency: 3,
+  smoking: 'non-smoker',
+  alcohol: 'none',
+  familyHistory: 'no',
 };
 
 const defaultSimParameters: SimParameters = {
@@ -179,15 +184,21 @@ export const calculateRiskScores = (data: HealthData): HealthScores => {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<Language>('en');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true); // Logged in by default for smoother prototyping
+  
+  // Persist session via localStorage
+  const [username, setUsername] = useState<string | null>(() => localStorage.getItem('vp_username'));
+  const [name, setName] = useState<string | null>(() => localStorage.getItem('vp_name'));
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => !!localStorage.getItem('vp_username'));
+
   const [healthData, setHealthData] = useState<HealthData>(defaultHealthData);
   const [simParameters, setSimParameters] = useState<SimParameters>(defaultSimParameters);
   const [simulatedScores, setSimulatedScores] = useState<HealthScores | null>(null);
-  const [patientNotes, setPatientNotes] = useState<string>(
-    "I have been feeling slightly fatigued in the afternoons, and I notice my chest feels slightly tight when climbing stairs. I'm trying to improve my lifestyle but finding it hard to stay consistent."
-  );
+  const [patientNotes, setPatientNotes] = useState<string>('');
 
   const [currentScores, setCurrentScores] = useState<HealthScores>(() => calculateRiskScores(defaultHealthData));
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<HealthTimelineEvent[]>([]);
+  const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
 
   // Sync theme with DOM
   useEffect(() => {
@@ -201,15 +212,134 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [theme]);
 
-  // Recalculate baseline scores whenever healthData changes
+  // Fetch user profile and timeline snapshots reactively
   useEffect(() => {
-    setCurrentScores(calculateRiskScores(healthData));
-  }, [healthData]);
+    if (!isLoggedIn || !username) {
+      setHealthData(defaultHealthData);
+      setCurrentScores(calculateRiskScores(defaultHealthData));
+      setRecommendations([]);
+      setTimelineEvents([]);
+      setVitalsHistory([]);
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        const response = await fetch(`/api/health-data?username=${encodeURIComponent(username)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setHealthData(data.healthData);
+          setCurrentScores(data.currentScores);
+          setRecommendations(data.recommendations);
+        }
+      } catch (err) {
+        console.error("Failed to fetch initial health data:", err);
+      }
+    };
+
+    const fetchHistory = async () => {
+      try {
+        const response = await fetch(`/api/history?username=${encodeURIComponent(username)}`);
+        if (response.ok) {
+          const historyLogs = await response.json();
+          setVitalsHistory(historyLogs);
+          // Map database logs to timeline events
+          const mappedEvents = historyLogs.map((log: any, index: number) => ({
+            id: `log-${log.id}`,
+            date: new Date(log.recorded_at).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            }),
+            title: index === historyLogs.length - 1 ? "Latest Vitals Recorded" : "Historical Vitals Sync",
+            description: `BP: ${log.bp} mmHg, Glucose: ${log.glucose} mg/dL, Weight: ${log.weight} kg. Overall Health Score: ${log.scores?.overallHealth || 0}/100.`,
+            type: (log.scores?.overallHealth || 0) > 80 ? 'improvement' : 'stable',
+            icon: (log.scores?.overallHealth || 0) > 80 ? 'CheckCircle' : 'Activity'
+          }));
+          
+          setTimelineEvents(mappedEvents.reverse());
+        }
+      } catch (err) {
+        console.error("Failed to fetch history logs:", err);
+      }
+    };
+
+    fetchData();
+    fetchHistory();
+
+    // WebSocket connect
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
+    const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/vitals`);
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'VITALS_UPDATE' && payload.username === username) {
+          console.log("Real-time vitals update received over WebSocket:", payload);
+          setHealthData(payload.healthData);
+          setCurrentScores(payload.currentScores);
+          setRecommendations(payload.recommendations);
+          
+          // Re-fetch timeline history to capture the newly added log
+          fetchHistory();
+        }
+      } catch (err) {
+        console.error("Error parsing WebSocket payload:", err);
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error("WebSocket connection error:", error);
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [isLoggedIn, username]);
+
+  const setSession = (uname: string, displayName: string) => {
+    localStorage.setItem('vp_username', uname);
+    localStorage.setItem('vp_name', displayName);
+    setUsername(uname);
+    setName(displayName);
+    setIsLoggedIn(true);
+  };
+
+  const logout = () => {
+    localStorage.removeItem('vp_username');
+    localStorage.removeItem('vp_name');
+    setUsername(null);
+    setName(null);
+    setIsLoggedIn(false);
+  };
+
+  // Post changes to backend API
+  const updateHealthDataOnBackend = async (newData: HealthData) => {
+    if (!username) return;
+    try {
+      const response = await fetch(`/api/health-data?username=${encodeURIComponent(username)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newData)
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        setHealthData(payload.healthData);
+        setCurrentScores(payload.currentScores);
+        setRecommendations(payload.recommendations);
+      }
+    } catch (err) {
+      console.error("Failed to save health data on backend:", err);
+    }
+  };
 
   // Run What-If Counterfactual Simulation
   const runSimulation = () => {
-    // Generate simulated data by applying slider changes to original health data
-    // Compute target weight change, exercise change, sleep change, and stress level change
     const simulatedData: HealthData = {
       ...healthData,
       weight: simParameters.weight, // sets weight directly
@@ -237,163 +367,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSimulatedScores(null);
   };
 
-  // Recommendations based dynamically on healthData
-  const getRecommendations = (): Recommendation[] => {
-    const recs: Recommendation[] = [];
-    const bmi = healthData.weight / Math.pow(healthData.height / 100, 2);
-
-    if (healthData.bpSystolic > 135 || healthData.bpDiastolic > 85) {
-      recs.push({
-        id: 'rec-bp',
-        priority: 'high',
-        title: 'Manage Elevated Blood Pressure',
-        description: 'Adopt the DASH (Dietary Approaches to Stop Hypertension) diet and reduce sodium intake below 1,500 mg per day.',
-        reason: `Your blood pressure is currently ${healthData.bpSystolic}/${healthData.bpDiastolic} mmHg. Explainable ML mapping attributes 25% of your Heart Risk directly to hypertension factors.`,
-        expectedImpact: 'Estimated reduction of 8-12 mmHg systolic and up to 15% reduction in cardiovascular event risk within 6 weeks.',
-        confidenceScore: 92,
-      });
-    }
-
-    if (healthData.smoking === 'smoker') {
-      recs.push({
-        id: 'rec-smoke',
-        priority: 'high',
-        title: 'Initiate Smoking Cessation Program',
-        description: 'Integrate nicotine replacement therapy (NRT) or consult a physician for pharmacological aids like varenicline.',
-        reason: 'Active smoking is identified as the single largest preventable contributor to your arterial stiffness and heart risk calculation.',
-        expectedImpact: 'Immediate 20% drops in heart rate risk within 48 hours; up to 50% decrease in heart disease risk at 1 year.',
-        confidenceScore: 97,
-      });
-    }
-
-    if (healthData.glucose > 100) {
-      recs.push({
-        id: 'rec-diab',
-        priority: 'high',
-        title: 'Stabilize Fasting Blood Glucose',
-        description: 'Minimize refined carbohydrates and simple sugars. Incorporate strength training to increase insulin sensitivity.',
-        reason: `Your blood glucose is ${healthData.glucose} mg/dL, putting you in the pre-diabetic risk window. AI explanations link this with weight and lack of daily exercise.`,
-        expectedImpact: 'Reversion of fasting blood sugar to <99 mg/dL and a 42% reduction in diabetes onset risk.',
-        confidenceScore: 89,
-      });
-    }
-
-    if (bmi > 25) {
-      recs.push({
-        id: 'rec-weight',
-        priority: 'medium',
-        title: 'Gradual Weight Optimization',
-        description: 'Target a calorie deficit of 300-500 kcal per day through consistent activity and portion control.',
-        reason: `Your BMI is ${bmi.toFixed(1)} (${bmi > 30 ? 'Obese' : 'Overweight'}). Weight acts as an amplifier for both vascular pressure and cellular insulin resistance.`,
-        expectedImpact: 'Reaching a BMI of 24.0 will lower systolic BP by 6 mmHg and raise daily sleep quality indicators.',
-        confidenceScore: 85,
-      });
-    }
-
-    if (healthData.sleepDuration < 7) {
-      recs.push({
-        id: 'rec-sleep',
-        priority: 'medium',
-        title: 'Sleep Hygiene Protocols',
-        description: 'Maintain a strict bedtime routine. Limit screen time and blue light exposure at least 60 minutes before sleeping.',
-        reason: `Your sleep of ${healthData.sleepDuration}h is below the physiological baseline of 7.2h, spiking cortisol production and stress markers.`,
-        expectedImpact: 'Stabilizing sleep at 7.5h will decrease overall stress score by 20% and reduce vascular resistance.',
-        confidenceScore: 88,
-      });
-    }
-
-    if (healthData.dailySteps < 6000) {
-      recs.push({
-        id: 'rec-steps',
-        priority: 'medium',
-        title: 'Increase Daily Physical Activity',
-        description: 'Implement two 15-minute walking sessions during the day, aiming for at least 8,000 steps.',
-        reason: 'Low steps reduce active metabolic rate and contribute to elevated cardiovascular risk indices.',
-        expectedImpact: 'Increases heart rate variability (HRV), lowers resting HR, and decreases heart risk scores.',
-        confidenceScore: 91,
-      });
-    }
-
-    // Default recommendation if healthy
-    if (recs.length === 0) {
-      recs.push({
-        id: 'rec-health',
-        priority: 'low',
-        title: 'Maintain Active Lifestyle',
-        description: 'Continue your excellent exercise regime and clean diet. Consider adding cardiovascular endurance sessions.',
-        reason: 'Your metrics are within healthy limits, keep up the prevention-focused habits.',
-        expectedImpact: 'Maintenance of overall health score above 90.',
-        confidenceScore: 95,
-      });
-    }
-
-    return recs;
-  };
-
-  // Timeline events showing explainable progression
-  const getTimelineEvents = (): HealthTimelineEvent[] => [
-    {
-      id: 't1',
-      date: 'June 1, 2026',
-      title: 'Sleep Duration Reduced',
-      description: 'Sleep duration average decreased from 7.1h to 5.8h due to work project deadlines.',
-      type: 'lifestyle-change',
-      icon: 'Moon',
-    },
-    {
-      id: 't2',
-      date: 'June 5, 2026',
-      title: 'Stress Level Increased',
-      description: 'Stress index climbed from 4 to 7, strongly correlated with sleep reduction and high resting HR.',
-      type: 'risk-increase',
-      icon: 'Activity',
-    },
-    {
-      id: 't3',
-      date: 'June 12, 2026',
-      title: 'Blood Pressure Elevated',
-      description: 'Systolic blood pressure rose to 138 mmHg. Explainer engine attributes this to elevated cortisol levels.',
-      type: 'risk-increase',
-      icon: 'Heart',
-    },
-    {
-      id: 't4',
-      date: 'June 18, 2026',
-      title: 'Cardiovascular Risk Increase',
-      description: 'Calculated Heart Risk rose by 12% following sustained pressure and low daily steps.',
-      type: 'risk-increase',
-      icon: 'TrendingUp',
-    },
-    {
-      id: 't5',
-      date: 'June 25, 2026',
-      title: 'Sleep Quality Restored',
-      description: 'Implemented sleep routines, restoring sleep duration back to 7.2 hours.',
-      type: 'improvement',
-      icon: 'Smile',
-    },
-    {
-      id: 't6',
-      date: 'June 30, 2026',
-      title: 'Stress & Risk Deflection',
-      description: 'Stress index fell by 15% and Blood Pressure decreased to 126/82 mmHg, dragging down Heart Risk.',
-      type: 'improvement',
-      icon: 'CheckCircle',
-    },
-  ];
-
   // Dynamic doctor questions based on patient anomalies
   const getDoctorQuestions = (): string[] => {
-    const q = [
-      "Is my current blood pressure reading (systolic 138) high enough to consider pharmacological therapy, or can I try lifestyle management for 3 more months?",
-      "How much of my cardiac risk score is attributed to my family history of heart disease versus active smoking?",
-      "I notice my stress level directly spikes my blood pressure in the logs. Are there specific beta-blockers or natural breathing techniques you suggest for quick heart-rate spikes?"
-    ];
+    const q: string[] = [];
+    if (healthData.bpSystolic > 130 || healthData.bpDiastolic > 85) {
+      q.push(`My blood pressure is ${healthData.bpSystolic}/${healthData.bpDiastolic} mmHg. Is pharmacological therapy needed, or can lifestyle changes manage this over the next 3 months?`);
+    }
+    if (healthData.familyHistory === 'yes') {
+      q.push("Given my family history of heart disease, how much of my cardiac risk score is genetic versus modifiable through lifestyle changes?");
+    }
+    if (healthData.stressLevel > 6) {
+      q.push(`My stress level is ${healthData.stressLevel}/10. Are there specific breathing techniques, beta-blockers, or interventions you recommend to prevent autonomic BP spikes?`);
+    }
     if (healthData.glucose > 100) {
-      q.push("With a fasting glucose of " + healthData.glucose + " mg/dL, should we run an HbA1c test to confirm pre-diabetic thresholds?");
+      q.push(`With a fasting glucose of ${healthData.glucose} mg/dL, should we run an HbA1c test to confirm pre-diabetic thresholds?`);
     }
     if (healthData.smoking === 'smoker') {
       q.push("What smoking cessation support structures or prescription aids (like Chantix or Zyban) would be most suitable for my physiological profile?");
+    }
+    if (healthData.sleepDuration < 6) {
+      q.push(`I'm averaging only ${healthData.sleepDuration} hours of sleep. Could this be contributing to elevated cortisol or hypertension, and what interventions would help?`);
+    }
+    if (q.length === 0) {
+      q.push("What key vitals should I track most closely given my current health profile?");
     }
     return q;
   };
@@ -407,16 +403,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTheme,
         isLoggedIn,
         setIsLoggedIn,
+        username,
+        name,
+        setSession,
+        logout,
         healthData,
-        setHealthData,
+        setHealthData: updateHealthDataOnBackend,
         simParameters,
         setSimParameters,
         currentScores,
         simulatedScores,
         runSimulation,
         resetSimulation,
-        recommendations: getRecommendations(),
-        timelineEvents: getTimelineEvents(),
+        recommendations,
+        timelineEvents,
+        vitalsHistory,
         doctorQuestions: getDoctorQuestions(),
         patientNotes,
         setPatientNotes,

@@ -47,7 +47,7 @@ import {
 } from 'lucide-react';
 
 export const ArchitecturePipeline: React.FC = () => {
-  const { healthData, currentScores } = useApp();
+  const { healthData, currentScores, name, username } = useApp();
   const [activeTab, setActiveTab] = useState<'ingestion' | 'databases' | 'core' | 'passport' | 'portal'>('ingestion');
   
   // ==========================================
@@ -124,10 +124,33 @@ export const ArchitecturePipeline: React.FC = () => {
   const [redisLogs, setRedisLogs] = useState<string[]>([]);
   const [redisStats, setRedisStats] = useState({ hits: 0, misses: 0 });
 
-  const loadDatabaseStates = () => {
-    // Run initial default query
-    const res = runPostgreSQLQuery(sqlQuery, healthData, currentScores);
-    setSqlResult(res);
+  const loadDatabaseStates = async () => {
+    try {
+      const response = await fetch('/api/query/postgres', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query: sqlQuery })
+      });
+      if (response.ok) {
+        const res = await response.json();
+        setSqlResult(res);
+      } else {
+        const err = await response.json();
+        setSqlResult({
+          columns: ['SQL Execution Error'],
+          rows: [[err.detail || 'Syntax error or access denied.']],
+          executionTimeMs: 0
+        });
+      }
+    } catch (err) {
+      setSqlResult({
+        columns: ['Connection Error'],
+        rows: [['Could not reach the PostgreSQL backend server. Check if the container is running.']],
+        executionTimeMs: 0
+      });
+    }
     
     // Fetch Redis Mock Cache keys and logs
     setRedisKeys(RedisMockCache.getEntries());
@@ -135,13 +158,38 @@ export const ArchitecturePipeline: React.FC = () => {
     setRedisStats({ hits: RedisMockCache.hitCount, misses: RedisMockCache.missCount });
   };
 
+  // Run on mount or when dashboard context scores/vitals update
   useEffect(() => {
     loadDatabaseStates();
-  }, [sqlQuery, healthData, currentScores]);
+  }, [healthData, currentScores]);
 
-  const handleRunSQL = () => {
-    const res = runPostgreSQLQuery(sqlQuery, healthData, currentScores);
-    setSqlResult(res);
+  const handleRunSQL = async () => {
+    try {
+      const response = await fetch('/api/query/postgres', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query: sqlQuery })
+      });
+      if (response.ok) {
+        const res = await response.json();
+        setSqlResult(res);
+      } else {
+        const err = await response.json();
+        setSqlResult({
+          columns: ['SQL Execution Error'],
+          rows: [[err.detail || 'Syntax error or access denied.']],
+          executionTimeMs: 0
+        });
+      }
+    } catch (err) {
+      setSqlResult({
+        columns: ['Connection Error'],
+        rows: [['Could not reach the PostgreSQL backend server. Check if the container is running.']],
+        executionTimeMs: 0
+      });
+    }
   };
 
   const handleRedisGet = (key: string) => {
@@ -1005,13 +1053,13 @@ export const ArchitecturePipeline: React.FC = () => {
               <div className="lg:col-span-1 p-5 bg-secondary/35 border border-border/40 rounded-3xl space-y-5">
                 <div className="border-b border-border/40 pb-3">
                   <h5 className="text-xs font-bold uppercase tracking-wider">Patient Records Overview</h5>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Patient UUID: VP-2026-90412-R</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Patient ID: @{username || 'user'}</p>
                 </div>
 
                 <div className="space-y-3.5 text-xs font-semibold">
                   <div className="flex justify-between py-1 border-b border-border/20">
                     <span className="text-muted-foreground">Patient Name</span>
-                    <span className="text-foreground">Rashmi</span>
+                    <span className="text-foreground">{name || 'User'}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-border/20">
                     <span className="text-muted-foreground">Age / Biological Sex</span>

@@ -37,7 +37,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     setTheme,
     setIsLoggedIn,
     healthData,
-    currentScores
+    currentScores,
+    name,
+    logout
   } = useApp();
 
   const navigate = useNavigate();
@@ -61,7 +63,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   ];
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
+    logout();
     navigate('/login');
   };
 
@@ -117,11 +119,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex items-center space-x-3 px-2 py-1 cursor-pointer" onClick={() => navigate('/profile')}>
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-[2px]">
               <div className="w-full h-full rounded-full bg-card flex items-center justify-center font-bold text-xs">
-                R
+                {name ? name.charAt(0).toUpperCase() : '?'}
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate">Rashmi</p>
+              <p className="text-sm font-semibold truncate">{name || 'User'}</p>
               <p className="text-[11px] text-muted-foreground truncate">{healthData.age} Yrs • {healthData.gender === 'male' ? 'Male' : 'Female'}</p>
             </div>
             <div className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-bold">
@@ -191,8 +193,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             })}
             <div className="border-t border-border/50 pt-3 flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center font-bold text-xs text-primary">R</div>
-                <span className="text-sm font-medium">Rashmi</span>
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center font-bold text-xs text-primary">
+                  {name ? name.charAt(0).toUpperCase() : '?'}
+                </div>
+                <span className="text-sm font-medium">{name || 'User'}</span>
               </div>
               <button
                 onClick={handleLogout}

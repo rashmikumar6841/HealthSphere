@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: vitalpredict-postgres
+    environment:
+      POSTGRES_DB: vitalpredict
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.12-community
+    container_name: vitalpredict-neo4j
+    ports:
+      - "7474:7474" # HTTP port
+      - "7687:7687" # Bolt port
+    environment:
+      - NEO4J_AUTH=neo4j/password
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: vitalpredict-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/vitalpredict
+      - NEO4J_URL=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
+    depends_on:
+      - postgres
+      - neo4j
+    restart: unless-stopped
+
+  vitalpredict:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vitalpredict-app
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  neo4j_data:

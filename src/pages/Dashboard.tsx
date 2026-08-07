@@ -2,7 +2,6 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { translations } from '../data/translations';
-import { weeklyHealthData } from '../data/dummyCharts';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -33,9 +32,23 @@ import {
 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
-  const { language, currentScores, healthData, recommendations, timelineEvents } = useApp();
+  const { language, currentScores, healthData, recommendations, timelineEvents, vitalsHistory, name } = useApp();
   const navigate = useNavigate();
   const t = translations[language] || translations.en;
+
+  // Use real database vitals history if available, or fall back to current patient healthData
+  const chartData = vitalsHistory && vitalsHistory.length > 0
+    ? vitalsHistory
+    : [
+        {
+          day: 'Current',
+          sleepHours: healthData.sleepDuration || 7,
+          bpSystolic: healthData.bpSystolic || 120,
+          bpDiastolic: healthData.bpDiastolic || 80,
+          glucose: healthData.glucose || 90,
+          steps: healthData.dailySteps || 5000,
+        }
+      ];
 
   // Custom tooltips for graphs
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -43,10 +56,12 @@ export const Dashboard: React.FC = () => {
       return (
         <div className="bg-card/90 border border-border/80 p-3 rounded-xl shadow-xl backdrop-blur-md text-xs space-y-1">
           <p className="font-bold text-foreground">{label}</p>
-          {payload.map((pld: any) => (
-            <p key={pld.name} style={{ color: pld.color }} className="font-semibold">
-              {pld.name}: {pld.value} {pld.unit || ''}
-            </p>
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center space-x-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span className="text-muted-foreground">{entry.name}:</span>
+              <span className="font-semibold">{entry.value}</span>
+            </div>
           ))}
         </div>
       );
@@ -76,7 +91,7 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-gradient-to-r from-primary/15 via-fuchsia-500/5 to-transparent rounded-2xl border border-border/30 backdrop-blur-sm">
         <div className="space-y-1">
           <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-            Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 font-black">Rashmi</span>
+            Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 font-black">{name || 'User'}</span>
           </h2>
           <p className="text-sm text-muted-foreground">
             Platform live. Your explainable clinical decision system is active.
@@ -231,7 +246,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={weeklyHealthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="sleepGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="rgb(56, 189, 248)" stopOpacity={0.2}/>
@@ -240,7 +255,7 @@ export const Dashboard: React.FC = () => {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="day" stroke="gray" fontSize={11} tickLine={false} />
-                <YAxis stroke="gray" fontSize={11} domain={[4, 9]} tickLine={false} />
+                <YAxis stroke="gray" fontSize={11} domain={[0, 12]} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="sleepHours" name="Sleep" unit=" hrs" stroke="rgb(56, 189, 248)" strokeWidth={2} fillOpacity={1} fill="url(#sleepGrad)" />
                 <ReferenceLine y={7.2} label={{ value: 'Target 7.2h', fill: '#38bdf8', fontSize: 10, position: 'top' }} stroke="#38bdf8" strokeDasharray="3 3" />
@@ -256,10 +271,10 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weeklyHealthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="day" stroke="gray" fontSize={11} tickLine={false} />
-                <YAxis stroke="gray" fontSize={11} domain={[70, 150]} tickLine={false} />
+                <YAxis stroke="gray" fontSize={11} domain={[50, 180]} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
                 <Line type="monotone" dataKey="bpSystolic" name="Systolic (Pressure)" unit=" mmHg" stroke="rgb(168, 85, 247)" strokeWidth={2} activeDot={{ r: 6 }} dot={true} />
@@ -278,7 +293,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={weeklyHealthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="glucGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="rgb(244, 63, 94)" stopOpacity={0.2}/>
@@ -287,7 +302,7 @@ export const Dashboard: React.FC = () => {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="day" stroke="gray" fontSize={11} tickLine={false} />
-                <YAxis stroke="gray" fontSize={11} domain={[80, 130]} tickLine={false} />
+                <YAxis stroke="gray" fontSize={11} domain={[60, 200]} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="glucose" name="Fasting Glucose" unit=" mg/dL" stroke="rgb(244, 63, 94)" strokeWidth={2} fill="url(#glucGrad)" />
                 <ReferenceLine y={100} label={{ value: 'Prediabetic Cap (100)', fill: '#f43f5e', fontSize: 10, position: 'right' }} stroke="#f43f5e" strokeDasharray="4 4" />
@@ -303,10 +318,10 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={weeklyHealthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="day" stroke="gray" fontSize={11} tickLine={false} />
-                <YAxis stroke="gray" fontSize={11} domain={[0, 10000]} tickLine={false} />
+                <YAxis stroke="gray" fontSize={11} domain={[0, 15000]} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="steps" name="Steps Taken" unit=" steps" fill="rgb(34, 197, 94)" radius={[4, 4, 0, 0]} barSize={28} />
                 <ReferenceLine y={8000} label={{ value: 'Goal 8k', fill: '#22c55e', fontSize: 10, position: 'top' }} stroke="#22c55e" strokeDasharray="3 3" />
@@ -322,45 +337,60 @@ export const Dashboard: React.FC = () => {
         
         {/* Today's Summary Card */}
         <div className="bg-card/45 backdrop-blur-md border border-border/60 rounded-2xl p-5 shadow-lg space-y-4 xl:col-span-1">
-          <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Today's Summary</h4>
+          <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Today's Vitals Summary</h4>
           
           <div className="space-y-3">
-            {/* Calorie Progress */}
+            {/* Daily Steps */}
             <div className="p-3.5 bg-secondary/35 border border-border/40 rounded-xl space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold">
                 <span className="flex items-center text-orange-400 gap-1.5">
-                  <Flame size={14} /> Calorie Intakes
+                  <Zap size={14} /> Daily Step Activity
                 </span>
-                <span className="text-muted-foreground">1,820 / 2,200 kcal</span>
+                <span className="text-muted-foreground">
+                  {(healthData.dailySteps || 0).toLocaleString()} / 10,000 steps
+                </span>
               </div>
               <div className="w-full bg-muted/30 h-2 rounded-full overflow-hidden">
-                <div className="bg-orange-500 h-full" style={{ width: '82%' }}></div>
+                <div
+                  className="bg-orange-500 h-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.round(((healthData.dailySteps || 0) / 10000) * 100))}%` }}
+                ></div>
               </div>
             </div>
 
-            {/* Hydration Progress */}
-            <div className="p-3.5 bg-secondary/35 border border-border/40 rounded-xl space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="flex items-center text-sky-400 gap-1.5">
-                  <Droplet size={14} /> Daily Hydration
-                </span>
-                <span className="text-muted-foreground">2.2 / 3.0 L</span>
-              </div>
-              <div className="w-full bg-muted/30 h-2 rounded-full overflow-hidden">
-                <div className="bg-sky-400 h-full" style={{ width: '73%' }}></div>
-              </div>
-            </div>
-
-            {/* Exercise Time */}
+            {/* Exercise Frequency */}
             <div className="p-3.5 bg-secondary/35 border border-border/40 rounded-xl space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold">
                 <span className="flex items-center text-emerald-400 gap-1.5">
-                  <Zap size={14} /> Active Movement
+                  <Activity size={14} /> Exercise Routine
                 </span>
-                <span className="text-muted-foreground">45 / 30 mins</span>
+                <span className="text-muted-foreground">
+                  {healthData.exerciseFrequency || 0} / 7 days/week
+                </span>
               </div>
               <div className="w-full bg-muted/30 h-2 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full" style={{ width: '100%' }}></div>
+                <div
+                  className="bg-emerald-500 h-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.round(((healthData.exerciseFrequency || 0) / 7) * 100))}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Sleep Baseline */}
+            <div className="p-3.5 bg-secondary/35 border border-border/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <span className="flex items-center text-sky-400 gap-1.5">
+                  <Moon size={14} /> Daily Sleep Target
+                </span>
+                <span className="text-muted-foreground">
+                  {healthData.sleepDuration || 0} / 8.0 hrs
+                </span>
+              </div>
+              <div className="w-full bg-muted/30 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-sky-400 h-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.round(((healthData.sleepDuration || 0) / 8) * 100))}%` }}
+                ></div>
               </div>
             </div>
           </div>

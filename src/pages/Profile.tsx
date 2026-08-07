@@ -31,7 +31,7 @@ const monthlyProgressData = [
 ];
 
 export const Profile: React.FC = () => {
-  const { language, healthData, currentScores } = useApp();
+  const { language, healthData, currentScores, name, username } = useApp();
   const t = translations[language] || translations.en;
 
   const bmi = healthData.weight / Math.pow(healthData.height / 100, 2);
@@ -86,27 +86,27 @@ export const Profile: React.FC = () => {
         {/* Avatar */}
         <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-primary via-purple-500 to-pink-500 p-1 shrink-0 shadow-lg">
           <div className="w-full h-full rounded-full bg-card flex items-center justify-center font-black text-2xl text-gradient">
-            R
+            {name != null && name.length > 0 ? name.charAt(0).toUpperCase() : '?'}
           </div>
         </div>
 
         {/* Profile Meta info */}
         <div className="flex-1 text-center sm:text-left space-y-1">
           <div className="flex flex-wrap justify-center sm:justify-start items-center gap-2">
-            <h3 className="text-xl font-bold">Rashmi</h3>
+            <h3 className="text-xl font-bold">{name ?? 'User'}</h3>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
               PREMIUM HEALTHCARE ASSIST
             </span>
           </div>
           <p className="text-xs text-muted-foreground font-semibold leading-relaxed">
-            Registered: March 2026 • Patient ID: VP-90412
+            Registered Patient • Username: @{username ?? 'user'}
           </p>
           <div className="flex flex-wrap justify-center sm:justify-start gap-x-4 text-xs font-semibold text-muted-foreground pt-1">
             <span>Height: {healthData.height} cm</span>
             <span>•</span>
             <span>Weight: {healthData.weight} kg</span>
             <span>•</span>
-            <span>BMI: {bmi.toFixed(1)}</span>
+            <span>BMI: {bmi > 0 ? bmi.toFixed(1) : 'N/A'}</span>
           </div>
         </div>
 

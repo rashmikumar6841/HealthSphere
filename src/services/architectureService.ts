@@ -383,7 +383,7 @@ export const runPostgreSQLQuery = (query: string, data: HealthData, scores: Heal
   
   if (clean.includes('from patients')) {
     columns = ['patient_id', 'name', 'age', 'gender', 'height_cm', 'weight_kg', 'smoking'];
-    rows = [[1, 'Rashmi', data.age, data.gender, data.height, data.weight, data.smoking]];
+    rows = [[1, 'User', data.age, data.gender, data.height, data.weight, data.smoking]];
   } else if (clean.includes('from vitals_history')) {
     columns = ['record_id', 'recorded_at', 'bp_systolic', 'bp_diastolic', 'glucose_mg_dl', 'heart_rate_bpm'];
     rows = [
@@ -416,10 +416,10 @@ export interface Neo4jGraphData {
   relationships: { source: string; target: string; type: string; weight: number }[];
 }
 
-export const getNeo4jGraph = (data: HealthData): Neo4jGraphData => {
+export const getNeo4jGraph = (data: HealthData, patientName: string = 'User'): Neo4jGraphData => {
   return {
     nodes: [
-      { id: 'Rashmi', label: 'Patient (Rashmi)', group: 'patient' },
+      { id: 'PatientNode', label: `Patient (${patientName})`, group: 'patient' },
       { id: 'Sleep', label: `Sleep (${data.sleepDuration}h)`, group: 'lifestyle' },
       { id: 'Stress', label: `Stress (${data.stressLevel}/10)`, group: 'vital' },
       { id: 'Weight', label: `Weight (${data.weight}kg)`, group: 'vital' },
@@ -429,8 +429,8 @@ export const getNeo4jGraph = (data: HealthData): Neo4jGraphData => {
       { id: 'DiabetesRisk', label: 'Diabetes Risk', group: 'risk' }
     ],
     relationships: [
-      { source: 'Rashmi', target: 'Sleep', type: 'HABIT_SLEEP', weight: 1.0 },
-      { source: 'Rashmi', target: 'Weight', type: 'PHYSIO_MASS', weight: 1.0 },
+      { source: 'PatientNode', target: 'Sleep', type: 'HABIT_SLEEP', weight: 1.0 },
+      { source: 'PatientNode', target: 'Weight', type: 'PHYSIO_MASS', weight: 1.0 },
       { source: 'Sleep', target: 'Stress', type: 'REGULATES_CORTISOL', weight: -0.65 },
       { source: 'Stress', target: 'BP', type: 'SYMPATHETIC_TENSION', weight: 0.55 },
       { source: 'Weight', target: 'BP', type: 'VASCULAR_COMPRESSION', weight: 0.45 },
@@ -450,8 +450,8 @@ export interface RedisCacheEntry {
 
 export class RedisMockCache {
   private static cache: Map<string, RedisCacheEntry> = new Map([
-    ['sess:patient:rashmi', { key: 'sess:patient:rashmi', value: '{"id":1,"status":"active"}', ttl: 86400, hits: 14 }],
-    ['cache:shap:heart:rashmi', { key: 'cache:shap:heart:rashmi', value: '{"contributions":7,"base":15}', ttl: 3600, hits: 32 }]
+    ['sess:patient:active', { key: 'sess:patient:active', value: '{"id":1,"status":"active"}', ttl: 86400, hits: 14 }],
+    ['cache:shap:heart:active', { key: 'cache:shap:heart:active', value: '{"contributions":7,"base":15}', ttl: 3600, hits: 32 }]
   ]);
   
   public static logs: string[] = [];
@@ -515,8 +515,8 @@ export const generateSHA256Hash = (input: string): string => {
 };
 
 // Generates the AI Health Fingerprint string
-export const generateAIHealthFingerprint = (data: HealthData, scores: HealthScores): { fingerprint: string; rawText: string } => {
-  const rawText = `Patient:Rashmi|Age:${data.age}|Sex:${data.gender}|BP:${data.bpSystolic}/${data.bpDiastolic}|Glucose:${data.glucose}|Steps:${data.dailySteps}|Scores:H:${scores.overallHealth},C:${scores.heartRisk},D:${scores.diabetesRisk}`;
+export const generateAIHealthFingerprint = (data: HealthData, scores: HealthScores, patientName: string = 'User'): { fingerprint: string; rawText: string } => {
+  const rawText = `Patient:${patientName}|Age:${data.age}|Sex:${data.gender}|BP:${data.bpSystolic}/${data.bpDiastolic}|Glucose:${data.glucose}|Steps:${data.dailySteps}|Scores:H:${scores.overallHealth},C:${scores.heartRisk},D:${scores.diabetesRisk}`;
   const fingerprint = generateSHA256Hash(rawText);
   return { fingerprint, rawText };
 };
