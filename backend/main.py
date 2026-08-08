@@ -1,17 +1,20 @@
 import logging
 import time
+import tempfile
 from typing import List, Dict, Any
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import os
 
 # Import relative components
 import database
 import graph
 import scoring
 import explainability
+import assessment
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -519,3 +522,265 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket encounter error: {e}")
         manager.disconnect(websocket)
+
+# --- ASSESSMENT AND VOICE PIPELINE ENDPOINTS ---
+
+class SessionCreateSchema(BaseModel):
+    username: str
+    language: str = "en"
+    model: str = "full"
+
+class SessionAnswerSchema(BaseModel):
+    text: str
+
+class SessionAnalyzeSchema(BaseModel):
+    override_data: dict
+
+@app.post("/api/assessment/session")
+def start_assessment_session(payload: SessionCreateSchema):
+    session = assessment.create_session(payload.username, payload.language, payload.model)
+    return session
+
+@app.get("/api/assessment/{session_id}")
+def get_assessment_session(session_id: str):
+    session = assessment.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+@app.post("/api/assessment/{session_id}/reset")
+def reset_assessment_session(session_id: str):
+    session = assessment.reset_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+@app.post("/api/assessment/{session_id}/answer")
+def submit_answer_text(session_id: str, payload: SessionAnswerSchema):
+    session = assessment.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    curr_q = session["current_question"]
+    if not curr_q:
+        return {
+            "transcript": payload.text,
+            "extracted_data": {},
+            "missing_fields": [],
+            "next_question": "Assessment complete. You can analyze your results.",
+            "next_question_audio": ""
+        }
+        
+    extracted = assessment.parse_contextual_answer(payload.text, curr_q, session["language"])
+    
+    # Merge extracted parameters
+    session["known_features"].update(extracted)
+    assessment.update_session_state(session)
+    
+    # Get next question details
+    next_q = session["current_question"]
+    next_text = ""
+    next_audio = ""
+    
+    if next_q:
+        next_text = assessment.QUESTIONS[next_q].get(session["language"], assessment.QUESTIONS[next_q]["en"])
+        next_audio = assessment.text_to_speech(next_text, session["language"])
+    else:
+        next_text = "Thank you. We have collected sufficient parameters for your assessment. Shall I analyze it?"
+        next_audio = assessment.text_to_speech(next_text, session["language"])
+        
+    session["conversation_history"].append({"sender": "user", "text": payload.text, "extracted": extracted})
+    session["conversation_history"].append({"sender": "assistant", "text": next_text})
+    
+    return {
+        "transcript": payload.text,
+        "extracted_data": extracted,
+        "missing_fields": session["missing_features"],
+        "next_question": next_text,
+        "next_question_audio": next_audio,
+        "session": session
+    }
+
+@app.post("/api/assessment/{session_id}/voice")
+async def submit_answer_voice(session_id: str, file: UploadFile = File(...)):
+    session = assessment.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    # Lazy load Whisper
+    whisper_model = assessment.get_whisper_model()
+    if not whisper_model:
+        raise HTTPException(status_code=503, detail="Local Whisper model is not loaded/available. Check setup.")
+        
+    # Write uploaded voice chunk to temp file
+    fd, temp_path = tempfile.mkstemp(suffix=".webm")
+    os.close(fd)
+    
+    try:
+        content = await file.read()
+        with open(temp_path, "wb") as f:
+            f.write(content)
+            
+        # Transcribe with Whisper
+        result = whisper_model.transcribe(temp_path, language=session["language"], fp16=False)
+        transcript = result.get("text", "").strip()
+    except Exception as e:
+        logger.error(f"Whisper transcription error: {e}")
+        raise HTTPException(status_code=500, detail=f"Speech transcription failed: {str(e)}")
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+            
+    # Standard answer processing
+    curr_q = session["current_question"]
+    if not curr_q:
+        return {
+            "transcript": transcript,
+            "extracted_data": {},
+            "missing_fields": [],
+            "next_question": "Assessment complete.",
+            "next_question_audio": ""
+        }
+        
+    extracted = assessment.parse_contextual_answer(transcript, curr_q, session["language"])
+    session["known_features"].update(extracted)
+    assessment.update_session_state(session)
+    
+    # Get next question
+    next_q = session["current_question"]
+    next_text = ""
+    next_audio = ""
+    
+    if next_q:
+        next_text = assessment.QUESTIONS[next_q].get(session["language"], assessment.QUESTIONS[next_q]["en"])
+        next_audio = assessment.text_to_speech(next_text, session["language"])
+    else:
+        next_text = "Thank you. We have collected sufficient parameters for your assessment. Shall I analyze it?"
+        next_audio = assessment.text_to_speech(next_text, session["language"])
+        
+    session["conversation_history"].append({"sender": "user", "text": transcript, "extracted": extracted})
+    session["conversation_history"].append({"sender": "assistant", "text": next_text})
+    
+    return {
+        "transcript": transcript,
+        "extracted_data": extracted,
+        "missing_fields": session["missing_features"],
+        "next_question": next_text,
+        "next_question_audio": next_audio,
+        "session": session
+    }
+
+@app.post("/api/assessment/{session_id}/upload-report")
+async def upload_medical_report(session_id: str, file: UploadFile = File(...)):
+    session = assessment.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    filename = file.filename.lower()
+    content = await file.read()
+    
+    extracted = {}
+    if filename.endswith(".txt"):
+        extracted = assessment.extract_from_txt(content)
+    elif filename.endswith(".csv"):
+        extracted = assessment.extract_from_csv(content)
+    elif filename.endswith(".pdf"):
+        extracted = assessment.extract_from_pdf(content)
+    elif filename.endswith((".png", ".jpg", ".jpeg")):
+        extracted = assessment.extract_from_image(content)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Please upload PDF, CSV, TXT, or Image.")
+        
+    # Merge extracted parameters
+    session["known_features"].update(extracted)
+    assessment.update_session_state(session)
+    
+    confidence = {key: 0.95 for key in extracted.keys()}  # Mock extraction confidence
+    
+    return {
+        "extracted_data": extracted,
+        "confidence": confidence,
+        "missing_fields": session["missing_features"],
+        "session": session
+    }
+
+@app.post("/api/assessment/{session_id}/analyze")
+def run_model_assessment(session_id: str, payload: SessionAnalyzeSchema, db: Session = Depends(database.get_db)):
+    session = assessment.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    # Merge manual overrides from verified UI
+    final_data = {**session["known_features"], **payload.override_data}
+    
+    # Check what target model is being assessed
+    target_model = session["model"]
+    if target_model == "full":
+        target_model = "heart"
+        
+    # Save parameters to the database to update patient biometrics profile
+    username = session["username"]
+    profile = db.query(database.HealthData).filter_by(username=username).first()
+    if not profile:
+        profile = database.HealthData(username=username)
+        db.add(profile)
+        
+    # Update properties inside database profile (support all 15 base fields)
+    field_mapping = {
+        "age": "age",
+        "gender": "gender",
+        "height": "height",
+        "weight": "weight",
+        "bpSystolic": "bpSystolic",
+        "bpDiastolic": "bpDiastolic",
+        "glucose": "glucose",
+        "heartRate": "heartRate",
+        "sleepDuration": "sleepDuration",
+        "stressLevel": "stressLevel",
+        "dailySteps": "dailySteps",
+        "exerciseFrequency": "exerciseFrequency",
+        "smoking": "smoking",
+        "alcohol": "alcohol",
+        "familyHistory": "familyHistory"
+    }
+    
+    for ext_key, db_key in field_mapping.items():
+        if ext_key in final_data and final_data[ext_key] is not None:
+            setattr(profile, db_key, final_data[ext_key])
+            
+    db.commit()
+    db.refresh(profile)
+    
+    # Retrieve current updated scores
+    profile_dict = {k: v for k, v in profile.__dict__.items() if not k.startswith('_')}
+    scores = scoring.calculate_risk_scores(profile_dict)
+    
+    # Calculate SHAP explainability using existing endpoint logic
+    shap_explanation = {}
+    try:
+        if target_model == 'heart':
+            features = scoring._build_heart_features(profile_dict)
+            bundle = scoring._load_model('heart')
+        elif target_model == 'diabetes':
+            features = scoring._build_diabetes_features(profile_dict)
+            bundle = scoring._load_model('diabetes')
+        else:
+            features = scoring._build_sleep_features(profile_dict)
+            bundle = scoring._load_model('sleep')
+            
+        if bundle is not None:
+            scaled = bundle['scaler'].transform(features.reshape(1, -1))[0]
+            feature_names = bundle['feature_names']
+            shap_explanation = explainability.get_shap_explanation(target_model, scaled, feature_names)
+    except Exception as e:
+        logger.error(f"Assessment SHAP calculation failed: {e}")
+        shap_explanation = {"error": str(e)}
+        
+    return {
+        "status": "success",
+        "model": target_model,
+        "scores": scores,
+        "shap": shap_explanation,
+        "data_used": final_data
+    }
+

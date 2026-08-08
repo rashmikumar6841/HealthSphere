@@ -22,7 +22,8 @@ import {
   Menu,
   X,
   FileText,
-  Workflow
+  Workflow,
+  Mic
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -52,6 +53,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const menuItems = [
     { name: t.dashboard, path: '/', icon: LayoutDashboard },
     { name: t.healthInput, path: '/input', icon: UserPen },
+    { name: (t as any).aiAssessment || 'AI Health Assessment', path: '/assessment', icon: Mic },
     { name: t.simulation, path: '/simulation', icon: SlidersHorizontal },
     { name: t.healthGraph, path: '/graph', icon: Network },
     { name: (t as any).architecture || "System Architecture", path: '/architecture', icon: Workflow },

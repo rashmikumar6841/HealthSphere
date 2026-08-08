@@ -22,3 +22,48 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ─── Medical Privacy & Health Data ─────────────────────────────────────────
+# IMPORTANT: Never commit patient data, audio, or medical reports to Git.
+
+# SQLite patient database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary audio recordings (voice assessment uploads)
+*.wav
+*.webm
+*.mp3
+*.ogg
+*.flac
+
+# Uploaded patient report files (PDF, image scans)
+uploads/
+tmp/
+temp/
+*.pdf
+
+# ─── ML Model Weights & Local STT/TTS ──────────────────────────────────────
+# Whisper STT model weights (downloaded locally, not tracked in Git)
+backend/models/whisper/
+# Piper TTS model files
+backend/models/tts/
+# Any .pt / .onnx / .bin model files that may be added
+*.pt
+*.onnx
+*.bin
+
+# ─── Python Virtual Environment ─────────────────────────────────────────────
+backend/.venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# ─── Environment Variables ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local

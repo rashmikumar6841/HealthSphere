@@ -13,6 +13,7 @@ import { Consultation } from './pages/Consultation';
 import { Settings } from './pages/Settings';
 import { Profile } from './pages/Profile';
 import { ArchitecturePipeline } from './pages/ArchitecturePipeline';
+import { AIHealthAssessment } from './pages/AIHealthAssessment';
 
 // Route Gating Component
 const ProtectedRoute: React.FC<{ children: React.JSX.Element }> = ({ children }) => {
@@ -129,6 +130,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/assessment"
+            element={
+              <ProtectedRoute>
+                <AIHealthAssessment />
               </ProtectedRoute>
             }
           />

@@ -20,6 +20,7 @@ export const Simulation: React.FC = () => {
   const {
     language,
     healthData,
+    setHealthData,
     simParameters,
     setSimParameters,
     currentScores,
@@ -29,7 +30,22 @@ export const Simulation: React.FC = () => {
   } = useApp();
 
   const [loading, setLoading] = useState(false);
+  const [synced, setSynced] = useState(false);
   const t = translations[language] || translations.en;
+
+  // Auto-sync initial slider positions to user's real healthData if not simulated yet
+  React.useEffect(() => {
+    if (!simulatedScores) {
+      setSimParameters({
+        sleep: healthData.sleepDuration || 7.5,
+        exercise: healthData.exerciseFrequency || 3,
+        calories: 2200,
+        weight: healthData.weight || 75,
+        stress: healthData.stressLevel || 4,
+        waterIntake: 2.8,
+      });
+    }
+  }, [healthData]);
 
   const handleSliderChange = (name: keyof typeof simParameters, value: number) => {
     setSimParameters({
@@ -40,15 +56,28 @@ export const Simulation: React.FC = () => {
 
   const handleRun = () => {
     setLoading(true);
-    // Simulate complex model inference with a sleek 900ms delay
     setTimeout(() => {
       runSimulation();
       setLoading(false);
-    }, 900);
+    }, 600);
   };
 
   const handleReset = () => {
     resetSimulation();
+    setSynced(false);
+  };
+
+  // Sync simulated target values into the user's actual health profile
+  const handleApplyToProfile = () => {
+    setHealthData({
+      ...healthData,
+      weight: simParameters.weight,
+      sleepDuration: simParameters.sleep,
+      exerciseFrequency: simParameters.exercise,
+      stressLevel: simParameters.stress,
+    });
+    setSynced(true);
+    setTimeout(() => setSynced(false), 4000);
   };
 
   // Calculate percentage risk drops
@@ -95,6 +124,13 @@ export const Simulation: React.FC = () => {
         impact: `-${(exDiff * 3).toFixed(0)}% Heart Risk • -${(exDiff * 4).toFixed(0)}% Diabetes Risk`,
         type: 'positive'
       });
+    } else if (exDiff < 0) {
+      explanations.push({
+        feature: 'Exercise Reduction',
+        detail: `Decreasing workout days reduces cardiorespiratory protection.`,
+        impact: `+${(Math.abs(exDiff) * 3).toFixed(0)}% Heart Risk`,
+        type: 'negative'
+      });
     }
 
     if (slDiff > 0) {
@@ -103,6 +139,13 @@ export const Simulation: React.FC = () => {
         detail: `Gaining ${slDiff.toFixed(1)}h of sleep lowers vascular resistance and stabilizes sympathetic tone.`,
         impact: `-${(slDiff * 2).toFixed(0)}% Heart Risk • Improves Sleep Score by +${(slDiff * 15).toFixed(0)}`,
         type: 'positive'
+      });
+    } else if (slDiff < 0) {
+      explanations.push({
+        feature: 'Sleep Deficit',
+        detail: `Losing ${Math.abs(slDiff).toFixed(1)}h sleep elevates nocturnal cortisol and blood pressure.`,
+        impact: `+${(Math.abs(slDiff) * 3).toFixed(0)}% Stress Index`,
+        type: 'negative'
       });
     }
 
@@ -117,8 +160,8 @@ export const Simulation: React.FC = () => {
 
     if (explanations.length === 0) {
       explanations.push({
-        feature: 'No Lifestyle Shifts',
-        detail: 'Simulated parameters match your baseline health profile.',
+        feature: 'Baseline Lifestyle Match',
+        detail: 'Simulated parameters match your current health profile.',
         impact: 'Overall risk indexes remain unchanged.',
         type: 'neutral'
       });
@@ -128,16 +171,36 @@ export const Simulation: React.FC = () => {
   };
 
   const shapImpacts = getShapExplanations();
+  const activeScores = simulatedScores || currentScores;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in text-foreground">
       
       {/* Page Header */}
-      <div className="space-y-1">
-        <h2 className="text-2xl font-extrabold tracking-tight">{t.simulationTitle}</h2>
-        <p className="text-sm text-muted-foreground">
-          What-If counterfactual simulation. Model the potential impact of healthy lifestyle adjustments before committing to them.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-gradient-to-r from-primary/10 via-indigo-500/5 to-transparent rounded-3xl border border-border/40 backdrop-blur-md shadow-lg">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-black tracking-tight flex items-center space-x-2">
+            <Sliders className="text-primary animate-pulse" size={24} />
+            <span>{t.simulationTitle}</span>
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            What-If counterfactual simulation. Model the potential impact of healthy lifestyle adjustments before committing to them.
+          </p>
+        </div>
+
+        {simulatedScores && (
+          <button
+            onClick={handleApplyToProfile}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-md flex items-center space-x-1.5 ${
+              synced
+                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'
+            }`}
+          >
+            <Sparkles size={14} />
+            <span>{synced ? 'Profile Updated ✓' : 'Apply Targets to Profile'}</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -145,7 +208,7 @@ export const Simulation: React.FC = () => {
         {/* Left Side: Sliders Controls (5 cols) */}
         <div className="lg:col-span-5 bg-card/45 backdrop-blur-md border border-border/60 rounded-3xl p-5 md:p-6 shadow-xl flex flex-col justify-between space-y-6">
           <div className="space-y-5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5 border-b border-border/40 pb-2">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-primary flex items-center gap-1.5 border-b border-border/40 pb-2">
               <Sliders size={14} /> Counterfactual Controls
             </h3>
 
@@ -155,7 +218,7 @@ export const Simulation: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="text-foreground">Daily Sleep Duration</span>
-                  <span className="font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">
+                  <span className="font-mono text-primary bg-primary/10 px-2 py-0.5 rounded font-bold">
                     {simParameters.sleep.toFixed(1)} hrs
                   </span>
                 </div>
@@ -170,7 +233,7 @@ export const Simulation: React.FC = () => {
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
                   <span>Actual: {healthData.sleepDuration} hrs</span>
-                  <span>Max: 10 hrs</span>
+                  <span>Target: 8.0 hrs</span>
                 </div>
               </div>
 
@@ -178,7 +241,7 @@ export const Simulation: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="text-foreground">Exercise Frequency</span>
-                  <span className="font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">
+                  <span className="font-mono text-primary bg-primary/10 px-2 py-0.5 rounded font-bold">
                     {simParameters.exercise.toFixed(1)} days/week
                   </span>
                 </div>
@@ -193,11 +256,279 @@ export const Simulation: React.FC = () => {
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
                   <span>Actual: {healthData.exerciseFrequency} days</span>
-                  <span>Max: 7 days</span>
+                  <span>Target: 5.0 days</span>
                 </div>
               </div>
 
-              {/* Calories */}
+              {/* Target Weight */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="text-foreground">Target Body Weight</span>
+                  <span className="font-mono text-primary bg-primary/10 px-2 py-0.5 rounded font-bold">
+                    {simParameters.weight.toFixed(1)} kg
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="40"
+                  max="140"
+                  step="0.5"
+                  value={simParameters.weight}
+                  onChange={(e) => handleSliderChange('weight', parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1.5 bg-secondary/80 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                  <span>Actual: {healthData.weight} kg</span>
+                  <span>Target: {Math.max(50, Math.round(healthData.weight * 0.95))} kg</span>
+                </div>
+              </div>
+
+              {/* Stress Level */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="text-foreground">Stress Level (1-10)</span>
+                  <span className="font-mono text-primary bg-primary/10 px-2 py-0.5 rounded font-bold">
+                    {simParameters.stress} / 10
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={simParameters.stress}
+                  onChange={(e) => handleSliderChange('stress', parseInt(e.target.value))}
+                  className="w-full accent-primary h-1.5 bg-secondary/80 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                  <span>Actual Index: {healthData.stressLevel}</span>
+                  <span>Target: 3</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 flex items-center space-x-3">
+            <button
+              onClick={handleRun}
+              disabled={loading}
+              className="flex-1 bg-primary text-primary-foreground font-semibold py-3 rounded-xl text-xs hover:bg-primary/95 transition-all shadow-md flex items-center justify-center space-x-1.5"
+            >
+              {loading ? (
+                <>
+                  <Sparkles size={14} className="animate-spin" />
+                  <span>Computing Counterfactuals...</span>
+                </>
+              ) : (
+                <>
+                  <Play size={14} />
+                  <span>Run Counterfactual Simulation</span>
+                </>
+              )}
+            </button>
+            
+            <button
+              onClick={handleReset}
+              className="p-3 rounded-xl border border-border hover:bg-secondary/40 text-muted-foreground transition-all"
+              title="Reset sliders"
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Right Side: Simulation Results & Comparisons (7 cols) */}
+        <div className="lg:col-span-7 space-y-6 flex flex-col justify-between">
+          
+          {/* Top Score Comparison Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
+            {/* Heart Risk Comparison Card */}
+            <div className="bg-card/45 backdrop-blur-md border border-border/60 rounded-3xl p-5 shadow-xl space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Heart size={14} className="text-red-400" /> Heart Risk Index
+                </span>
+                {simulatedScores && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                    getRiskDrop(currentScores.heartRisk, simulatedScores.heartRisk).isGood
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  }`}>
+                    {getRiskDrop(currentScores.heartRisk, simulatedScores.heartRisk).text}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-baseline justify-between pt-1">
+                <div>
+                  <span className="text-[10px] uppercase text-muted-foreground font-bold block">Current Baseline</span>
+                  <span className="text-xl font-bold font-mono text-foreground">{currentScores.heartRisk}%</span>
+                </div>
+                <ArrowRight size={16} className="text-muted-foreground" />
+                <div className="text-right">
+                  <span className="text-[10px] uppercase text-primary font-bold block">Simulated Target</span>
+                  <span className="text-2xl font-black font-mono text-primary">{activeScores.heartRisk}%</span>
+                </div>
+              </div>
+
+              <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${activeScores.heartRisk}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Diabetes Risk Comparison Card */}
+            <div className="bg-card/45 backdrop-blur-md border border-border/60 rounded-3xl p-5 shadow-xl space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Activity size={14} className="text-amber-400" /> Diabetes Risk Index
+                </span>
+                {simulatedScores && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                    getRiskDrop(currentScores.diabetesRisk, simulatedScores.diabetesRisk).isGood
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  }`}>
+                    {getRiskDrop(currentScores.diabetesRisk, simulatedScores.diabetesRisk).text}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-baseline justify-between pt-1">
+                <div>
+                  <span className="text-[10px] uppercase text-muted-foreground font-bold block">Current Baseline</span>
+                  <span className="text-xl font-bold font-mono text-foreground">{currentScores.diabetesRisk}%</span>
+                </div>
+                <ArrowRight size={16} className="text-muted-foreground" />
+                <div className="text-right">
+                  <span className="text-[10px] uppercase text-primary font-bold block">Simulated Target</span>
+                  <span className="text-2xl font-black font-mono text-primary">{activeScores.diabetesRisk}%</span>
+                </div>
+              </div>
+
+              <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${activeScores.diabetesRisk}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Sleep Score Comparison Card */}
+            <div className="bg-card/45 backdrop-blur-md border border-border/60 rounded-3xl p-5 shadow-xl space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Moon size={14} className="text-indigo-400" /> Sleep Quality Index
+                </span>
+                {simulatedScores && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                    getScoreDiff(currentScores.sleepScore, simulatedScores.sleepScore).isGood
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {getScoreDiff(currentScores.sleepScore, simulatedScores.sleepScore).text}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-baseline justify-between pt-1">
+                <div>
+                  <span className="text-[10px] uppercase text-muted-foreground font-bold block">Current Baseline</span>
+                  <span className="text-xl font-bold font-mono text-foreground">{currentScores.sleepScore}/100</span>
+                </div>
+                <ArrowRight size={16} className="text-muted-foreground" />
+                <div className="text-right">
+                  <span className="text-[10px] uppercase text-primary font-bold block">Simulated Target</span>
+                  <span className="text-2xl font-black font-mono text-primary">{activeScores.sleepScore}/100</span>
+                </div>
+              </div>
+
+              <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-indigo-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${activeScores.sleepScore}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Overall Wellness Index Card */}
+            <div className="bg-card/45 backdrop-blur-md border border-border/60 rounded-3xl p-5 shadow-xl space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Gauge size={14} className="text-emerald-400" /> Overall Wellness Index
+                </span>
+                {simulatedScores && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                    getScoreDiff(currentScores.overallHealth, simulatedScores.overallHealth).isGood
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {getScoreDiff(currentScores.overallHealth, simulatedScores.overallHealth).text}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-baseline justify-between pt-1">
+                <div>
+                  <span className="text-[10px] uppercase text-muted-foreground font-bold block">Current Baseline</span>
+                  <span className="text-xl font-bold font-mono text-foreground">{currentScores.overallHealth}/100</span>
+                </div>
+                <ArrowRight size={16} className="text-muted-foreground" />
+                <div className="text-right">
+                  <span className="text-[10px] uppercase text-emerald-400 font-bold block">Simulated Target</span>
+                  <span className="text-2xl font-black font-mono text-emerald-400">{activeScores.overallHealth}/100</span>
+                </div>
+              </div>
+
+              <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${activeScores.overallHealth}%` }}
+                />
+              </div>
+            </div>
+
+          </div>
+
+          {/* Attributions & Impact Insights Box */}
+          <div className="bg-card/45 backdrop-blur-md border border-border/60 rounded-3xl p-6 shadow-xl space-y-4">
+            <h4 className="text-xs font-extrabold uppercase tracking-widest text-muted-foreground flex items-center space-x-1.5">
+              <Lightbulb size={16} className="text-amber-400" />
+              <span>Simulated Counterfactual Impact Analysis</span>
+            </h4>
+
+            <div className="space-y-3">
+              {shapImpacts.map((item, idx) => (
+                <div key={idx} className="bg-secondary/30 border border-border/40 p-3.5 rounded-2xl flex items-start justify-between gap-4 text-xs">
+                  <div className="space-y-1">
+                    <span className="font-extrabold text-foreground block">{item.feature}</span>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{item.detail}</p>
+                  </div>
+                  <span className={`text-[10px] font-extrabold font-mono px-2.5 py-1 rounded-full whitespace-nowrap ${
+                    item.type === 'positive'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : item.type === 'negative'
+                      ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                      : 'bg-secondary text-muted-foreground border border-border/40'
+                  }`}>
+                    {item.impact}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+};
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="text-foreground">Daily Target Calories</span>
